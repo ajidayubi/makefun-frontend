@@ -1,0 +1,7 @@
+{
+  "name": "makefun-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node serve.ts", "dossier": "node main.ts" },
+  "engines": { "node": ">=22" }
+}
