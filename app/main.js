@@ -29,3 +29,5 @@ document.addEventListener('submit',event=>{
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)){const search=document.querySelector('#bounty-search');if(search){event.preventDefault();search.focus();}}});
 window.addEventListener('hashchange',render);
 render();
+const clock=document.querySelector('#utc-clock'); const tick=()=>{if(clock)clock.textContent=new Date().toISOString().slice(11,19)+' UTC'}; tick(); setInterval(tick,1000);
+const theme=document.querySelector('#theme-toggle'); theme?.addEventListener('click',()=>{const light=document.documentElement.dataset.theme==='light';document.documentElement.dataset.theme=light?'':'light';theme.textContent=light?'LIGHT':'DARK'});
