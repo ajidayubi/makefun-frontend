@@ -3,21 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111c2c">
-  <meta name="description" content="Find your next challenge. Explore live make.fun bounties, follow the rankings, and discover independent makers.">
-  <title>make.fun — Good work deserves a reward.</title>
-  <link rel="stylesheet" href="style.css">
-  <script type="module" src="main.js"></script>
+  <meta name="color-scheme" content="dark light">
+  <title>make.fun / open board</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <a class="skip" href="#content">Skip to content</a>
-  <header class="topbar"><div class="header-inner">
-    <a class="wordmark" href="#/" aria-label="make.fun home">make<span>.</span>fun<i>✳</i></a>
-    <nav aria-label="Main navigation"><a href="#/" class="board-nav">Bounty board</a><a href="https://make.fun" target="_blank" rel="noopener">About make.fun <span>↗</span></a></nav>
-    <form class="profile-search" role="search"><label class="sr-only" for="header-handle">Find a maker by handle</label><span aria-hidden="true">⌕</span><input id="header-handle" name="handle" placeholder="Find a maker…" required maxlength="100"><button aria-label="Open maker profile">↵</button></form><button id="theme-toggle" class="theme-toggle">LIGHT</button><time id="utc-clock">00:00:00 UTC</time>
-  </div></header>
-  <div class="live-strip"><span class="live-dot"></span> LIVE <span id="ticker">PUBLIC MAKE.FUN API</span></div>
-  <main id="content" tabindex="-1"><div class="loading"><span class="spinner"></span>Finding something worth making…</div></main>
-  <footer><a class="wordmark" href="#/">make<span>.</span>fun</a><p>A little competition. A lot of possibility.</p><span>Built for the makers. <span class="live-dot"></span> Public API</span></footer>
+  <header class="topbar">
+    <a class="brand" href="#/" aria-label="make.fun board">make.fun<span class="brand-mark">✳</span></a>
+    <nav class="primary-nav" aria-label="Primary navigation">
+      <a href="#/" data-nav="board">BOARD</a>
+      <a href="#/rankings" data-nav="rankings">RANKINGS</a>
+    </nav>
+    <form id="maker-search" class="maker-search" role="search">
+      <label class="visually-hidden" for="maker-handle">Find a maker</label>
+      <input id="maker-handle" name="handle" autocomplete="off" placeholder="FIND A MAKER" aria-label="Find a maker profile">
+      <button type="submit" aria-label="Open maker profile">↵</button>
+    </form>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light theme">LIGHT</button>
+    <time id="utc-clock" class="clock" aria-label="UTC time">--:--:-- UTC</time>
+  </header>
+  <section id="ticker" class="ticker" aria-live="polite"><span class="ticker-dot"></span><span>CONNECTING TO MAKE.FUN API</span></section>
+  <main id="app" tabindex="-1"><div class="loading">FETCHING LIVE BOARD…</div></main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="/main.js"></script>
 </body>
 </html>

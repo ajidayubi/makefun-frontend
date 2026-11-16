@@ -1,19 +1,27 @@
-const base = 'https://make.fun/api';
-const cache = new Map();
-export async function get(path, signal) {
-  const cached = cache.get(path);
-  const headers = { Accept: 'application/json' };
-  if (cached?.etag) headers['If-None-Match'] = cached.etag;
-  const response = await fetch(base + path, { method: 'GET', signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(15000)]), headers });
-  if (response.status === 304 && cached) return cached.data;
-  if (!response.ok) throw new Error(response.status === 404 ? 'We couldn’t find that page. Check the name and try again.' : 'make.fun is taking a moment. Please try again shortly.');
-  const data = await response.json();
-  cache.set(path, {data, etag:response.headers.get('ETag')});
-  return data;
+const API = 'https://make.fun/api';
+
+async function get(path) {
+  const response = await fetch(`${API}${path}`, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`make.fun API ${response.status} at ${path}`);
+  return response.json();
 }
-export const list = (signal) => get('/competitions?status=open&activity=times', signal);
-export const bounty = (slug, signal) => get(`/competitions/${encodeURIComponent(slug)}`, signal);
-export const rankings = (slug, signal) => get(`/competitions/${encodeURIComponent(slug)}/leaderboard`, signal);
-export const submissions = (slug, signal) => get(`/competitions/${encodeURIComponent(slug)}/submissions`, signal);
-export const profile = (handle, signal) => get(`/profiles/${encodeURIComponent(handle)}`, signal);
-export const items = value => Array.isArray(value) ? value : value?.items ?? value?.entries ?? value?.submissions ?? [];
+
+export function getBoard() {
+  return get('/competitions?status=open');
+}
+
+export function getBounty(slug) {
+  return get(`/competitions/${encodeURIComponent(slug)}`);
+}
+
+export function getLeaderboard(slug) {
+  return get(`/competitions/${encodeURIComponent(slug)}/leaderboard`);
+}
+
+export function getRankings() {
+  return get('/rankings?limit=50');
+}
+
+export function getProfile(handle) {
+  return get(`/profiles/${encodeURIComponent(handle)}`);
+}

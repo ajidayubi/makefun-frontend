@@ -1,25 +1,37 @@
+import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { readFile, realpath, stat } from 'node:fs/promises';
-import { resolve, extname, sep } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = fileURLToPath(new URL('./app/', import.meta.url));
-const portIndex = process.argv.indexOf('--port');
-const port = portIndex < 0 ? 8080 : Number(process.argv[portIndex + 1]);
-if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Use --port followed by a port from 1 to 65535.');
-const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml' };
-createServer(async (request, response) => {
-  if (!['GET','HEAD'].includes(request.method ?? '')) { response.writeHead(405, { Allow:'GET, HEAD' }); response.end('Read-only server'); return; }
+const root = resolve(fileURLToPath(new URL('./app', import.meta.url)));
+const portArg = process.argv.indexOf('--port');
+const parsedPort = portArg < 0 ? 8080 : Number(process.argv[portArg + 1]);
+const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 8080;
+const mime: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
+};
+
+createServer((request, response) => {
+  let pathname: string;
   try {
-    const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
-    const file = resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
-    if (!file.startsWith(resolve(root) + sep)) { response.writeHead(403); response.end('Forbidden'); return; }
-    const actual = await realpath(file);
-    if (!actual.startsWith(resolve(root) + sep)) { response.writeHead(403); response.end('Forbidden'); return; }
-    const info = await stat(actual);
-    if (!info.isFile()) throw new Error('Not a file');
-    const data = await readFile(actual);
-    response.writeHead(200, {'Content-Type':types[extname(file)] ?? 'application/octet-stream','Content-Length':data.length,'X-Content-Type-Options':'nosniff','Cache-Control':'no-cache'});
-    response.end(request.method === 'HEAD' ? undefined : data);
-  } catch { response.writeHead(404, {'Content-Type':'text/plain; charset=utf-8'}); response.end('Page not found'); }
-}).listen(port, '0.0.0.0', () => console.log(`make.fun client: http://localhost:${port}`));
+    pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+  } catch {
+    response.writeHead(400).end('bad request');
+    return;
+  }
+  if (pathname.endsWith('/')) pathname += 'index.html';
+  const file = resolve(join(root, normalize(pathname)));
+  if (file !== root && !file.startsWith(root + sep)) {
+    response.writeHead(403).end('forbidden');
+    return;
+  }
+  try {
+    const size = statSync(file).size;
+    response.writeHead(200, { 'content-type': mime[extname(file).toLowerCase()] ?? 'application/octet-stream', 'content-length': size, 'cache-control': 'no-store' });
+    createReadStream(file).pipe(response);
+  } catch {
+    response.writeHead(404).end('not found');
+  }
+}).listen(port, '127.0.0.1', () => console.log(`make.fun frontend at http://127.0.0.1:${port}`));
