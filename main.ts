@@ -10,9 +10,9 @@ mkdirSync(out, { recursive: true });
 cpSync(join(here, 'app'), join(out, 'app'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
-writeFileSync(join(out, 'dossier.json'), buildDossier(out, {
-  text_max_bytes: 163840,
-  screenshots: { max: 3, max_bytes: 262144 },
-  app_max_files: 993,
-  app_max_bytes: 16777216,
-}));
+
+writeFileSync(
+  join(out, 'dossier.json'),
+  buildDossier(out, { text_max_bytes: 163840, screenshots: { max: 3, max_bytes: 262144 }, app_max_files: 993, app_max_bytes: 16777216 }),
+);
+console.log('Dossier built and written successfully.');

@@ -1,27 +1,35 @@
-const API = 'https://make.fun/api';
+const API_BASE = 'https://make.fun/api';
 
-async function get(path) {
-  const response = await fetch(`${API}${path}`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`make.fun API ${response.status} at ${path}`);
-  return response.json();
+export async function fetchCompetitions(status = 'open') {
+  try {
+    const res = await fetch(`${API_BASE}/competitions?status=${status}`);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    return data.items || [];
+  } catch (err) {
+    console.error('Failed to fetch competitions:', err);
+    throw err;
+  }
 }
 
-export function getBoard() {
-  return get('/competitions?status=open');
+export async function fetchCompetitionDetail(slug) {
+  try {
+    const res = await fetch(`${API_BASE}/competitions/${slug}`);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error(`Failed to fetch competition ${slug}:`, err);
+    throw err;
+  }
 }
 
-export function getBounty(slug) {
-  return get(`/competitions/${encodeURIComponent(slug)}`);
-}
-
-export function getLeaderboard(slug) {
-  return get(`/competitions/${encodeURIComponent(slug)}/leaderboard`);
-}
-
-export function getRankings() {
-  return get('/rankings?limit=50');
-}
-
-export function getProfile(handle) {
-  return get(`/profiles/${encodeURIComponent(handle)}`);
+export async function fetchLeaderboard(slug) {
+  try {
+    const res = await fetch(`${API_BASE}/competitions/${slug}/leaderboard`);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error(`Failed to fetch leaderboard for ${slug}:`, err);
+    throw err;
+  }
 }

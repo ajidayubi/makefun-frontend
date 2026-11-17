@@ -1,37 +1,59 @@
-import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
+import { extname, join, resolve } from 'node:path';
 
-const root = resolve(fileURLToPath(new URL('./app', import.meta.url)));
-const portArg = process.argv.indexOf('--port');
-const parsedPort = portArg < 0 ? 8080 : Number(process.argv[portArg + 1]);
-const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 8080;
-const mime: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
+const PORT = 8080;
+const ROOT = resolve('./app');
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon'
 };
 
-createServer((request, response) => {
-  let pathname: string;
+const server = createServer(async (req, res) => {
   try {
-    pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
-  } catch {
-    response.writeHead(400).end('bad request');
-    return;
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    let pathname = url.pathname;
+    if (pathname === '/') pathname = '/index.html';
+    const filePath = join(ROOT, pathname);
+
+    // Prevent directory traversal
+    if (!filePath.startsWith(ROOT)) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
+
+    const ext = extname(filePath);
+    const contentType = MIME[ext] || 'application/octet-stream';
+
+    const content = await readFile(filePath);
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(content);
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      try {
+        // Fallback to index.html for SPA hash routing
+        const indexContent = await readFile(join(ROOT, 'index.html'));
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(indexContent);
+      } catch {
+        res.writeHead(404);
+        res.end('Not Found');
+      }
+    } else {
+      res.writeHead(500);
+      res.end('Internal Server Error');
+    }
   }
-  if (pathname.endsWith('/')) pathname += 'index.html';
-  const file = resolve(join(root, normalize(pathname)));
-  if (file !== root && !file.startsWith(root + sep)) {
-    response.writeHead(403).end('forbidden');
-    return;
-  }
-  try {
-    const size = statSync(file).size;
-    response.writeHead(200, { 'content-type': mime[extname(file).toLowerCase()] ?? 'application/octet-stream', 'content-length': size, 'cache-control': 'no-store' });
-    createReadStream(file).pipe(response);
-  } catch {
-    response.writeHead(404).end('not found');
-  }
-}).listen(port, '127.0.0.1', () => console.log(`make.fun frontend at http://127.0.0.1:${port}`));
+});
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`Server running at http://127.0.0.1:${PORT}/`);
+});

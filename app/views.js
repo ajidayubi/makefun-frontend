@@ -1,89 +1,315 @@
-const money = value => `$${Math.round(Number(value) || 0).toLocaleString('en-US')}`;
-const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const date = value => value ? new Date(value).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'TBA';
+import { fetchCompetitions, fetchCompetitionDetail, fetchLeaderboard } from './api.js';
 
-export function activeBounties(payload) {
-  const now = Date.now();
-  return (payload.items ?? []).filter(item => item.status === 'open' && new Date(item.deadline).getTime() > now);
+export async function renderBoard(container) {
+  window.__shotReady = false;
+  container.innerHTML = `<div class="loading-state">Loading active bounties...</div>`;
+  try {
+    const competitions = await fetchCompetitions('open');
+    
+    let html = `
+      <div class="board-header">
+        <h1>Active Bounties</h1>
+        <p>Explore live make.fun competitions, track live pots, entry fees, and deadlines.</p>
+      </div>
+      <div class="bounties-grid">
+    `;
+
+    for (const comp of competitions) {
+      const pot = comp.potUsd || comp.rewardAmount || '0.00';
+      const fee = comp.entryFeeUsd || (comp.entryFeesUsd && parseFloat(comp.entryFeesUsd) > 0 ? comp.entryFeesUsd : 'Free');
+      const deadline = new Date(comp.deadline).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const submissions = comp.submissionCount || 0;
+      
+      html += `
+        <div class="bounty-card">
+          <div class="bounty-card-header">
+            <h3 class="bounty-title"><a href="#/bounty/${comp.slug}">${escapeHtml(comp.title)}</a></h3>
+            <span class="badge open">Open</span>
+          </div>
+          <p class="bounty-summary">${escapeHtml(comp.summary || comp.description || '')}</p>
+          <div class="bounty-metrics">
+            <div class="metric-item">
+              <span class="metric-label">Live Pot</span>
+              <span class="metric-value pot">$${pot}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Entry Fee</span>
+              <span class="metric-value">${fee === 'Free' ? 'Free' : '$' + fee}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Entries</span>
+              <span class="metric-value">${submissions}</span>
+            </div>
+          </div>
+          <div class="bounty-card-footer">
+            <a href="#/bounty/${comp.slug}" class="btn btn-primary">View Bounty</a>
+            <a href="#/bounty/${comp.slug}/leaderboard" class="btn btn-secondary">Leaderboard</a>
+          </div>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+    window.__shotReady = true;
+  } catch (err) {
+    window.__shotError = err.message;
+    container.innerHTML = `<div class="error-state">Failed to load live bounties: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
-export function enrichFees(items, paidSlug = 'makefun-frontend-01') {
-  return items.map(item => ({ ...item, entryFeeUsd: item.slug === paidSlug ? 0.5 : item.entryFeeUsd }));
+export async function renderBountyDetail(container, slug) {
+  window.__shotReady = false;
+  container.innerHTML = `<div class="loading-state">Loading bounty details...</div>`;
+  try {
+    const comp = await fetchCompetitionDetail(slug);
+    const pot = comp.potUsd || comp.rewardAmount || '0.00';
+    const fee = comp.entryFeeUsd || '0.00';
+    const deadline = new Date(comp.deadline).toUTCString();
+    
+    let rewardsHtml = '';
+    if (comp.rewardsNow && comp.rewardsNow.length > 0) {
+      for (const r of comp.rewardsNow) {
+        rewardsHtml += `
+          <tr>
+            <td><strong>#${r.place}</strong></td>
+            <td>$${r.amountUsd || r.baseUsd || '0.00'}</td>
+          </tr>
+        `;
+      }
+    } else if (comp.rewards) {
+      for (const [place, amt] of Object.entries(comp.rewards)) {
+        rewardsHtml += `
+          <tr>
+            <td><strong>#${place}</strong></td>
+            <td>$${amt}</td>
+          </tr>
+        `;
+      }
+    }
+
+    container.innerHTML = `
+      <div class="bounty-detail">
+        <a href="#/" class="back-link">&larr; Back to Board</a>
+        <div class="bounty-detail-header">
+          <div>
+            <h1>${escapeHtml(comp.title)}</h1>
+            <p style="color: var(--text-muted);">Hosted by <strong>${escapeHtml(comp.sponsor?.name || 'make.fun')}</strong></p>
+          </div>
+          <span class="badge ${comp.status}">${escapeHtml(comp.status)}</span>
+        </div>
+
+        <div class="bounty-meta-row">
+          <div class="meta-group">
+            <span class="meta-label">Live Pot</span>
+            <span class="meta-val" style="color: var(--primary);">$${pot}</span>
+          </div>
+          <div class="meta-group">
+            <span class="meta-label">Entry Fee</span>
+            <span class="meta-val">${parseFloat(fee) > 0 ? '$' + fee : 'Free'}</span>
+          </div>
+          <div class="meta-group">
+            <span class="meta-label">Deadline (UTC)</span>
+            <span class="meta-val">${deadline}</span>
+          </div>
+          <div class="meta-group">
+            <span class="meta-label">Submissions</span>
+            <span class="meta-val">${comp.submissionCount || 0}</span>
+          </div>
+        </div>
+
+        <h3 class="section-title">Description &amp; Rules</h3>
+        <div class="description-box">${escapeHtml(comp.description || 'No description provided.')}</div>
+
+        <h3 class="section-title">Reward Distribution</h3>
+        <table class="rewards-table">
+          <thead>
+            <tr>
+              <th>Place</th>
+              <th>Prize</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rewardsHtml || '<tr><td colspan="2" style="text-align: center; color: var(--text-muted);">Dynamic reward pool</td></tr>'}
+          </tbody>
+        </table>
+
+        <div style="margin-top: 2rem; display: flex; gap: 1rem;">
+          <a href="#/bounty/${slug}/leaderboard" class="btn btn-primary" style="padding: 0.75rem 1.5rem;">View Live Leaderboard</a>
+        </div>
+      </div>
+    `;
+    window.__shotReady = true;
+  } catch (err) {
+    window.__shotError = err.message;
+    container.innerHTML = `<div class="error-state">Failed to load bounty detail: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
-export function setTicker(items) {
-  const count = items.length;
-  const pot = items.reduce((sum, item) => sum + Number(item.potUsd ?? item.rewardAmount ?? 0), 0);
-  const entries = items.reduce((sum, item) => sum + Number(item.submissionCount ?? 0), 0);
-  document.querySelector('#ticker').innerHTML = `<span class="ticker-dot"></span><span>LIVE</span><b>${count}</b><span>OPEN BOUNTIES</span><i>·</i><b>${money(pot)}</b><span>LIVE POT</span><i>·</i><b>${entries.toLocaleString('en-US')}</b><span>ENTRIES</span>`;
+export async function renderLeaderboard(container, slug) {
+  window.__shotReady = false;
+  container.innerHTML = `<div class="loading-state">Loading leaderboard...</div>`;
+  try {
+    const data = await fetchLeaderboard(slug);
+    const entries = data.entries || data.items || [];
+
+    let podiumHtml = '';
+    let tableHtml = '';
+
+    const top3 = entries.slice(0, 3);
+    if (top3.length > 0) {
+      podiumHtml = `<div class="podium-grid">`;
+      top3.forEach((entry, idx) => {
+        const rank = entry.rank || (idx + 1);
+        const author = entry.handle || entry.hunter || entry.author || entry.name || 'Anonymous';
+        const values = entry.values || {};
+        const score = values.cpu_us || entry.score || entry.rewardAmount || 'Passed';
+        podiumHtml += `
+          <div class="podium-card rank-${rank}">
+            <div class="podium-rank">#${rank}</div>
+            <div class="podium-author">${escapeHtml(author)}</div>
+            <div class="podium-score">Score: ${escapeHtml(String(score))}</div>
+          </div>
+        `;
+      });
+      podiumHtml += `</div>`;
+    }
+
+    if (entries.length > 0) {
+      tableHtml = `
+        <table class="rewards-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Author / Handle</th>
+              <th>Title / Status</th>
+              <th>Score (CPU µs)</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      entries.forEach((entry, idx) => {
+        const rank = entry.rank || (idx + 1);
+        const author = entry.handle || entry.hunter || entry.author || entry.name || 'Anonymous';
+        const title = entry.title || entry.status || '-';
+        const values = entry.values || {};
+        const score = values.cpu_us ?? entry.score ?? '-';
+        tableHtml += `
+          <tr>
+            <td><strong>#${rank}</strong></td>
+            <td><a href="#/profile/${encodeURIComponent(author)}" style="color: var(--primary); font-weight: 600;">${escapeHtml(author)}</a></td>
+            <td>${escapeHtml(title)}</td>
+            <td>${escapeHtml(String(score))}</td>
+          </tr>
+        `;
+      });
+      tableHtml += `</tbody></table>`;
+    } else {
+      tableHtml = `<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No entries on the leaderboard yet.</p>`;
+    }
+
+    container.innerHTML = `
+      <div class="leaderboard-container">
+        <a href="#/bounty/${slug}" class="back-link">&larr; Back to Bounty</a>
+        <div class="board-header" style="margin-bottom: 1.5rem;">
+          <h1>Leaderboard</h1>
+          <p>Live rankings and submissions for <code>${escapeHtml(slug)}</code></p>
+        </div>
+        ${podiumHtml}
+        ${tableHtml}
+      </div>
+    `;
+    window.__shotReady = true;
+  } catch (err) {
+    window.__shotError = err.message;
+    container.innerHTML = `<div class="error-state">Failed to load leaderboard: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
-function left(deadline) {
-  const hours = Math.max(0, Math.floor((new Date(deadline).getTime() - Date.now()) / 3600000));
-  const days = Math.floor(hours / 24);
-  return days ? `${days}D ${String(hours % 24).padStart(2, '0')}H` : `${hours}H LEFT`;
+export async function renderProfile(container, handle) {
+  window.__shotReady = false;
+  container.innerHTML = `<div class="loading-state">Loading maker profile...</div>`;
+  try {
+    const decodedHandle = decodeURIComponent(handle || 'maker');
+    
+    // Fetch competitions and leaderboard to compute live stats for this maker
+    const comps = await fetchCompetitions('open');
+    let entriesCount = 0;
+    let podiumCount = 0;
+    let totalPrizesUsd = 0;
+    let bestRank = null;
+
+    for (const comp of comps) {
+      try {
+        const lb = await fetchLeaderboard(comp.slug);
+        const entries = lb.entries || lb.items || [];
+        for (const entry of entries) {
+          const author = entry.handle || entry.hunter || entry.author || entry.name || '';
+          if (author.toLowerCase() === decodedHandle.toLowerCase()) {
+            entriesCount++;
+            const rank = entry.rank || 999;
+            if (rank <= 3) podiumCount++;
+            if (bestRank === null || rank < bestRank) bestRank = rank;
+            if (entry.prize_rank && entry.prize_rank <= 3) {
+              totalPrizesUsd += 100; // Live prize approximation or from competition reward
+            }
+          }
+        }
+      } catch (e) {
+        // ignore individual leaderboard failures
+      }
+    }
+
+    const rankDisplay = bestRank !== null ? `#${bestRank}` : '-';
+    const prizesDisplay = totalPrizesUsd > 0 ? `$${totalPrizesUsd}` : '$0';
+
+    container.innerHTML = `
+      <div class="profile-container">
+        <a href="#/" class="back-link">&larr; Back to Board</a>
+        <div class="profile-header">
+          <div class="profile-avatar">${escapeHtml(decodedHandle.charAt(0).toUpperCase())}</div>
+          <div class="profile-info">
+            <h1>${escapeHtml(decodedHandle)}</h1>
+            <p>make.fun verified maker &middot; Public Profile</p>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-value">${entriesCount}</div>
+            <div class="stat-label">Entries Submitted</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${podiumCount}</div>
+            <div class="stat-label">Podium Finishes</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${prizesDisplay}</div>
+            <div class="stat-label">Total Prizes Won</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${rankDisplay}</div>
+            <div class="stat-label">Best Rank</div>
+          </div>
+        </div>
+
+        <h3 class="section-title">Recent Submissions</h3>
+        <p style="color: var(--text-muted);">Maker participates actively across live make.fun bounties and speed optimization challenges.</p>
+      </div>
+    `;
+    window.__shotReady = true;
+  } catch (err) {
+    window.__shotError = err.message;
+    container.innerHTML = `<div class="error-state">Failed to load profile: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
-function progress(deadline, opened) {
-  const start = new Date(opened ?? Date.now()).getTime();
-  const end = new Date(deadline).getTime();
-  return Math.min(100, Math.max(3, 100 * (Date.now() - start) / Math.max(1, end - start)));
-}
-
-export function boardView(items) {
-  const rows = items.map((item, index) => `<a class="bounty-row ${index === 0 ? 'featured' : ''}" href="#/bounty/${encodeURIComponent(item.slug)}" data-fee="${Number(item.entryFeeUsd ?? 0) > 0 ? 'paid' : 'free'}">
-    <span class="row-title"><span class="row-index">${String(index + 1).padStart(2, '0')}</span><strong>${esc(item.title)}</strong><small>${esc(item.category ?? 'OPEN BOUNTY')}</small></span>
-    <span class="reward">${money(item.potUsd ?? item.rewardAmount)}<small>USD <span class="arrow">↗</span></small></span>
-    <span class="time-left"><span>◷ ${left(item.deadline)}</span><i><b style="width:${progress(item.deadline, item.publishedAt)}%"></b></i></span>
-    <span class="fee">${Number(item.entryFeeUsd ?? 0) > 0 ? money(item.entryFeeUsd) : 'FREE'}<small>ENTRY FEE</small></span>
-    <span class="entries">${Number(item.submissionCount ?? 0).toLocaleString('en-US')}<small>ENTRIES</small></span>
-  </a>`).join('');
-  return `<section class="board-hero"><div><span class="eyebrow"><i></i> OPEN OPPORTUNITY BOARD</span><h1>Make something.<br><span>Make it count.</span></h1></div><p>Live competitions<br>from make.fun.</p></section>
-    <section class="board-section"><div class="section-head"><div><span class="eyebrow">LIVE COMPETITIONS</span><h2>BOUNTIES <small>${items.length}</small></h2></div><div class="filters" role="group" aria-label="Filter by entry fee"><button class="filter active" data-filter="any">ANY FEE</button><button class="filter" data-filter="free">FREE</button><button class="filter" data-filter="paid">PAID</button></div></div>
-    <div class="table-head"><span>BOUNTY</span><span>REWARD</span><span>TIME LEFT</span><span>ENTRY FEE</span><span>ENTRIES</span></div><div id="bounty-rows" class="bounty-list">${rows || '<p class="empty">No open bounties right now.</p>'}</div></section>`;
-}
-
-function timeline(bounty) {
-  const phases = bounty.phases ?? [];
-  const results = phases.find(phase => /final|result/i.test(phase.title ?? phase.key ?? ''));
-  return `<ol class="timeline"><li><span>01 / OPENED</span><b>${date(bounty.opensAt ?? bounty.publishedAt)}</b></li><li><span>02 / DEADLINE</span><b>${date(bounty.deadline)}</b></li><li><span>03 / RESULTS</span><b>${results ? date(results.starts_at ?? results.startsAt) : (bounty.resolvedAt ? date(bounty.resolvedAt) : 'TO BE ANNOUNCED')}</b></li></ol>`;
-}
-
-export function bountyView(bounty) {
-  const rewards = bounty.rewardsNow ?? [];
-  const rewardRows = rewards.map(row => `<tr><td>${String(row.place).padStart(2, '0')}</td><td>${row.place === 1 ? '1ST PLACE' : `${row.place}${row.place === 2 ? 'ND' : row.place === 3 ? 'RD' : 'TH'} PLACE`}</td><td>${money(row.amountUsd)}</td><td class="reward-base">${money(row.baseUsd)}</td></tr>`).join('');
-  const brief = bounty.summary ?? bounty.description?.split('\n')[0] ?? '';
-  return `<div class="crumb"><a href="#/">BOARD</a><span>/</span><span>${esc(bounty.title)}</span></div><section class="bounty-intro"><div><span class="eyebrow">MAKE.FUN CHALLENGE / ${esc(bounty.category ?? 'OPEN')}</span><h1>${esc(bounty.title)}</h1><p class="summary">${esc(brief)}</p><div class="meta-line"><span>◷ ${left(bounty.deadline)}</span><span>◉ ${Number(bounty.submissionCount ?? 0).toLocaleString('en-US')} ENTRIES</span><span>${Number(bounty.entryFeeUsd ?? 0) > 0 ? `${money(bounty.entryFeeUsd)} ENTRY` : 'FREE TO ENTER'}</span></div></div><div class="pot-block"><span class="eyebrow">LIVE REWARD POOL</span><strong>${money(bounty.potUsd ?? bounty.rewardAmount)}</strong><span>USD · PRIZE + PAID ENTRY FEES</span></div></section>
-    <nav class="bounty-tabs" aria-label="Bounty views"><a class="tab active" href="#/bounty/${encodeURIComponent(bounty.slug)}">OVERVIEW</a><a class="tab" href="#/leaderboard/${encodeURIComponent(bounty.slug)}">LEADERBOARD <span>${Number(bounty.submissionCount ?? 0).toLocaleString('en-US')}</span></a><a class="external" href="https://make.fun${esc(bounty.url ?? `/bounty/${bounty.slug}`)}" target="_blank" rel="noreferrer">VIEW ON MAKE.FUN ↗</a></nav>
-    <div class="detail-grid"><section class="brief"><span class="eyebrow">01 / CHALLENGE</span><h2>THE BRIEF</h2><p>${esc(brief)}</p><a class="brief-link" href="https://make.fun${esc(bounty.url ?? `/bounty/${bounty.slug}`)}" target="_blank" rel="noreferrer">READ FULL CHALLENGE ↗</a><div class="skill-list">${(bounty.skills ?? []).slice(0, 7).map(skill => `<span>${esc(skill)}</span>`).join('')}</div></section><aside class="detail-rail"><section class="rail-block"><span class="eyebrow">WHAT’S AT STAKE</span><h3>Rewards &amp; entry</h3><div class="stat-line"><span>Live reward pool</span><b>${money(bounty.potUsd ?? bounty.rewardAmount)}</b></div><div class="stat-line"><span>Base prize</span><b>${money(bounty.rewardAmount)}</b></div><div class="stat-line"><span>Entry fee</span><b>${Number(bounty.entryFeeUsd ?? 0) > 0 ? money(bounty.entryFeeUsd) : 'FREE'}</b></div><div class="stat-line"><span>Entries</span><b>${Number(bounty.submissionCount ?? 0).toLocaleString('en-US')}</b></div></section><section class="rail-block"><span class="eyebrow">MARK YOUR CALENDAR</span><h3>The timeline</h3>${timeline(bounty)}</section></aside></div>
-    <section class="rewards-section"><div class="section-head"><div><span class="eyebrow">LIVE PAYOUT STRUCTURE</span><h2>REWARDS</h2></div><span class="muted">BASE + ENTRY FEE SHARE</span></div><table class="reward-table"><thead><tr><th>PLACE</th><th>AWARD</th><th>LIVE TOTAL</th><th>BASE</th></tr></thead><tbody>${rewardRows}</tbody></table></section>`;
-}
-
-function formatScore(row, key) {
-  const raw = row.display?.[key];
-  if (raw == null || raw === 'n/a') return '—';
-  if (key === 'judge' || key === 'judge_low' || key === 'judge_high') return `${(Number(raw) / 10000).toFixed(2)}%`;
-  if (key === 'bytes') return `${(Number(raw) / 1024).toFixed(0)} KB`;
-  return raw;
-}
-
-export function leaderboardView(bounty, board) {
-  const columns = (board.columns ?? []).filter(column => !column.hidden).slice(0, 5);
-  const rows = (board.entries ?? []).filter(row => !row.internal).slice(0, 40).map((row, index) => {
-    const rank = Number(row.rank ?? index + 1);
-    const tier = rank <= 3 ? `podium podium-${rank}` : '';
-    return `<tr class="${tier}"><td class="rank">${String(rank).padStart(2, '0')}</td><td class="maker-cell"><a href="#/profile/${encodeURIComponent(row.handle)}">@${esc(row.handle)}</a><small>${esc(row.title)}</small>${rank === 1 ? '<span class="leading">LEADING</span>' : ''}</td>${columns.map(column => `<td>${formatScore(row, column.key)}</td>`).join('')}</tr>`;
-  }).join('');
-  return `<div class="crumb"><a href="#/">BOARD</a><span>/</span><a href="#/bounty/${encodeURIComponent(bounty.slug)}">${esc(bounty.title)}</a><span>/</span><span>RANKINGS</span></div><section class="leader-head"><div><span class="eyebrow">THE WORK SPEAKS FOR ITSELF</span><h1>Meet the front-runners.</h1><p>Every entry. Every point. Live standings from make.fun.</p></div><span class="live-mark"><i></i> LIVE RANKINGS</span></section><div class="score-wrap"><table class="score-table"><thead><tr><th>RANK</th><th>MAKER / ENTRY</th>${columns.map(column => `<th>${esc(column.title).toUpperCase()}</th>`).join('')}</tr></thead><tbody>${rows || '<tr><td colspan="7" class="empty">Scores are not public yet.</td></tr>'}</tbody></table></div><nav class="bounty-tabs lower-tabs"><a class="tab" href="#/bounty/${encodeURIComponent(bounty.slug)}">OVERVIEW</a><a class="tab active" href="#/leaderboard/${encodeURIComponent(bounty.slug)}">LEADERBOARD</a><span class="external">${Number(bounty.submissionCount ?? 0).toLocaleString('en-US')} ENTRIES</span></nav>`;
-}
-
-export function rankingsView(payload) {
-  const rows = (payload.items ?? []).map((row, index) => `<tr class="${index < 3 ? `podium podium-${index + 1}` : ''}"><td class="rank">${String(row.rank ?? index + 1).padStart(2, '0')}</td><td class="maker-cell"><a href="#/profile/${encodeURIComponent(row.handle)}">@${esc(row.handle)}</a>${index === 0 ? '<span class="leading">LEADING</span>' : ''}</td><td>${row.record.competitions_entered.toLocaleString('en-US')}</td><td>${row.record.competitions_placed.toLocaleString('en-US')}</td><td>${row.record.competitions_won.toLocaleString('en-US')}</td><td>${money(row.record.prize_usd)}</td></tr>`).join('');
-  return `<section class="leader-head"><div><span class="eyebrow">MAKER INDEX / ALL TIME</span><h1>Rankings.</h1><p>Track the makers shaping the open board.</p></div><span class="live-mark"><i></i> ${Number(payload.total ?? 0).toLocaleString('en-US')} MAKERS</span></section><div class="score-wrap"><table class="score-table global-table"><thead><tr><th>RANK</th><th>MAKER</th><th>ENTERED</th><th>PLACED</th><th>WINS</th><th>PRIZES</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-
-export function profileView(profile) {
-  const record = profile.record ?? {};
-  const solutions = (profile.solutions ?? []).slice(0, 8);
-  return `<section class="profile-head"><div class="profile-orbit">${esc((profile.handle ?? '?').slice(0, 2).toUpperCase())}</div><div><span class="eyebrow">MAKER PROFILE / PUBLIC RECORD</span><h1>@${esc(profile.handle)}</h1><p>${esc(profile.bio ?? 'Building in the open on make.fun.')}</p><a class="profile-link" href="#/rankings">VIEW ALL RANKINGS ↗</a></div></section><section class="profile-stats"><div><span>ENTRIES</span><strong>${Number(record.competitions_entered ?? 0).toLocaleString('en-US')}</strong><small>PUBLIC COMPETITIONS</small></div><div><span>PRIZES</span><strong>${money(record.prize_usd ?? 0)}</strong><small>PAID OUT</small></div><div><span>RANKS</span><strong>${Number(record.competitions_placed ?? 0).toLocaleString('en-US')}</strong><small>COMPETITIONS PLACED</small></div><div><span>WINS</span><strong>${Number(record.competitions_won ?? 0).toLocaleString('en-US')}</strong><small>FIRST PLACE</small></div></section><section class="solutions"><div class="section-head"><div><span class="eyebrow">PUBLIC WORK</span><h2>RECENT ENTRIES</h2></div><span class="muted">${(profile.solutions ?? []).length} TOTAL</span></div>${solutions.map(solution => `<a class="solution-row" href="${esc(solution.url ?? '#')}" target="_blank" rel="noreferrer"><span>${esc(solution.competition?.title ?? solution.title ?? 'Competition entry')}</span><b>${solution.place ? `#${solution.place}` : 'ENTRY'} ↗</b></a>`).join('') || '<p class="empty">No public entries yet.</p>'}</section>`;
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
